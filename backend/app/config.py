@@ -1,4 +1,6 @@
 from typing import Optional, List
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -21,6 +23,24 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 6
     chunk_size: int = 512
     chunk_overlap: int = 64
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def use_asyncpg_driver(cls, value: str) -> str:
+        if value.startswith("postgres://"):
+            value = value.replace("postgres://", "postgresql+asyncpg://", 1)
+        if value.startswith("postgresql://"):
+            value = value.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        parsed = urlsplit(value)
+        query = parse_qsl(parsed.query, keep_blank_values=True)
+        query = [
+            ("ssl" if key == "sslmode" else key, val)
+            for key, val in query
+            if key != "channel_binding"
+        ]
+        value = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+        return value
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
